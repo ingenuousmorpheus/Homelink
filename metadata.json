@@ -1,0 +1,5 @@
+{
+  "name": "HomeLink",
+  "description": "A secure mobile-first interface to chat with your local LLM running in LM Studio via a FastAPI bridge.",
+  "requestFramePermissions": []
+}
