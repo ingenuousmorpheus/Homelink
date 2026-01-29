@@ -1,0 +1,29 @@
+{
+  "lm_studio": {
+    "host": "192.168.1.109",
+    "port": 1234,
+    "base_url": "http://192.168.1.109:1234",
+    "endpoints": {
+      "chat": "/v1/chat/completions",
+      "models": "/v1/models"
+    }
+  },
+  "models": {
+    "primary": "kimi-vl-a3b-thinking-2506",
+    "vision": "zai-org/glm-4.6v-flash",
+    "fallback": "dolphin-2.6-mistral-7b:2"
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 6969
+  },
+  "timeouts": {
+    "chat_completion": 120,
+    "vision_request": 60,
+    "health_check": 5
+  },
+  "retry": {
+    "max_attempts": 3,
+    "delay_seconds": 2
+  }
+}
