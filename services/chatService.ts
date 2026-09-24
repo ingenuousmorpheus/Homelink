@@ -46,16 +46,19 @@ export const streamChat = async (
         if (trimmed.startsWith('data: ')) {
           const data = trimmed.slice(6).trim();
           if (data === '[DONE]') break;
-          
+
+          let parsed: any;
           try {
-            const parsed = JSON.parse(data);
-            if (parsed.error) throw new Error(parsed.error);
-            const chunk = parsed.choices?.[0]?.delta?.content || '';
-            if (chunk) onChunk(chunk);
+            parsed = JSON.parse(data);
           } catch (e) {
             // Silently handle partial JSON chunks if they happen during streaming
             console.debug('Skip partial chunk');
+            continue;
           }
+
+          if (parsed.error) throw new Error(parsed.error);
+          const chunk = parsed.choices?.[0]?.delta?.content || '';
+          if (chunk) onChunk(chunk);
         }
       }
     }

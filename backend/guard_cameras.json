@@ -1,0 +1,6 @@
+{
+  "_comment": "Extra (non-USB) camera sources for this guard node. Ids start at 10. Edit and press WAKE in the app - no restart needed.",
+  "extra_sources": [
+    { "url": "screen:0", "name": "Alienware Desktop" }
+  ]
+}

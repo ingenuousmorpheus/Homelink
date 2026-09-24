@@ -1085,3 +1085,154 @@ The differentiator is not just remote access.
 It is:
 
 > **A self-healing, low-latency window into the user's local AI home network.**
+
+
+---
+
+# HL-00 CHECKPOINT — Executed 2026-09-24
+
+**Executed:** 2026-09-24 00:20 America/New_York
+**Working folder found:** `C:\Homelink`
+**Starting GitHub HEAD:** `da411e82e2e2bede62b5013dba275aff1fe03d50` ("Add HomeLink reliability and low-latency roadmap")
+
+### Goal
+
+Execute HL-00 as specified in section 20: make GitHub contain the HomeLink build actually
+running on this PC, without redesigning anything. Secondary, and unplanned: the owner reported
+HomeLink down and the E drive unreadable, which had to be repaired before the baseline could be
+captured at all.
+
+This entry required real synthesis rather than routine execution — the "E drive" fault and the
+"cameras dead" fault looked like one problem and were two unrelated ones, and the camera fault
+had to be traced across three machines before any of it could be trusted.
+
+### Starting State
+
+- GitHub `main` held **23 tracked files** and no camera implementation, exactly as section 1 predicted.
+- Two candidate folders existed: `C:\Homelink` and `F:\Homelink`. Neither was a git repository;
+  no local clone existed anywhere.
+- HomeLink's camera grid was not working. The owner reported the E drive as "accessible but
+  HomeLink cannot read it."
+
+### Changed
+
+**Repairs (made before the baseline was captured, and part of it):**
+
+- `F:\Lana TV\lana_emulator_catalog.py` — 9 occurrences of the dead `\\192.168.1.145\E` prefix
+  repointed to `\\LENOVOMONITOR\Lana TV`.
+- `F:\Lana TV\lana_roots.py` — added `\\LENOVOMONITOR\Lana TV` and `\\192.168.1.145\Lana TV`
+  ahead of the dead `E` / `E$` candidates in `_DEFAULT_ROOT_SPECS`.
+- `C:\HomeLink\backend\camera_server.py` **on LenovoMonitor and on RedKryptonite** — replaced the
+  pre-2026-08-31 build with the current one (52372 bytes, contains `CAMERA_ROLL_PROBE_TIMEOUT`).
+  Backups left beside each as `camera_server.py.bak-<stamp>`. Both guards restarted.
+- `C:\Homelink\serve_app.py` — refuses to serve filenames matching `token|secret|password|
+  credential|.env` out of `/guard-update/`, and refuses directory listings. Opt back in for an
+  install with `HOMELINK_ALLOW_TOKEN_FETCH=1`.
+
+**Reconciliation into GitHub:** 30 files staged. 21 previously absent (including
+`components/CameraView.tsx`, `services/cameraService.ts`, `services/liveAudio.ts`,
+`backend/camera_server.py`, `serve_app.py`, `start_homelink_app.bat`, all of
+`redkryptonite-setup/`). `.gitignore` hardened; `.env.example` added; new
+`docs/HOMELINK_CURRENT_ARCHITECTURE.md`.
+
+**Preserved from GitHub, not overwritten:** `homelinksession.md` (this file), `README.md`,
+`backend/HOMELINK_SETUP.md`.
+
+### Verification
+
+- **Working-build identification:** SHA-256 of `camera_server.py` fetched from the live port 8080
+  matched `C:\Homelink`'s copy (`7D724DD7…`) and not `F:\Homelink`'s (`96B1206F…`).
+- **E drive:** `net use \\192.168.1.145\E` returned **System error 59**; `net share` on
+  LenovoMonitor showed no share named `E` — only `E$` (admin) and `Lana TV` → `E:\`.
+  After the fix: media library **388 videos**, root state `ok`; game catalogue **10 games across
+  6 consoles**, all reachable.
+- **Guard wedge:** on both remote nodes, `Invoke-WebRequest http://127.0.0.1:7171/` failed **on the
+  node's own localhost** while `netstat` showed the port LISTENING. Their `camera_server.py` was
+  dated 2026-08-14 (Lenovo) and 2026-08-30 (RK) with `CAMERA_ROLL_PROBE_TIMEOUT` absent.
+  `Test-Path '\\REDKRYPTONITE\PixServer\Camera Roll'` from the Lenovo took **6465 ms** to fail.
+- **After repair:** all three guards HTTP 200, **7/7 cameras** `camera_ok=true`; real JPEG frames
+  pulled from AlienWare (29192 bytes) and LenovoMonitor (56296 bytes); RedKryptonite held HTTP 200
+  across 5 samples over 2 minutes.
+- **UI:** Sentinel grid rendered with two LenovoMonitor tiles at **1280×720** actual pixels and the
+  overlay reading `REC 2026-09-23 23:57:03`.
+- **Commit safety:** staged set asserted to contain zero matches for `token`, `guard_events`,
+  `node_modules`, `.env.local`, `.zip`, `.jpg`, `dist/`.
+
+### Result
+
+**PARTIAL.** The HL-00 gate is met: the owner's exact working version is now recoverable from
+GitHub and its behavior is documented. Two items in the phase's task list are *not* satisfied —
+see Gate/Blocker.
+
+### Findings
+
+1. **Section 1's prediction is CONFIRMED with evidence.** GitHub's camera code
+   (`vision_router_fixed.py`, single frame per request) is not what runs. The working build streams
+   **MJPEG** from `/stream` into an `<img>` tag.
+2. **The "camera freezes while the date/time overlay keeps updating" symptom now has a measured
+   root cause, and section 1 was right about the mechanism.** The overlay is client-side, driven by
+   a 1 s `setClock` tick in `CameraView.tsx` — it is wholly independent of the video, so it keeps
+   running when frames stop. What stops the frames is the **guard process wedging**: a pre-fix
+   `camera_server.py` touches the camera roll on every `/status` with no timeout, and an unreachable
+   SMB roll *blocks* rather than erroring. The port stays open, so the client sees a hung connection
+   rather than a refusal, and the 120 s blind reconnect is the only thing that would ever clear it.
+   Section 1's instruction — "the clock should never be used as proof that the video is live" — is
+   exactly correct and should stay in the design.
+3. **Two independent faults presented as one outage.** The dead `E` share (Lana TV media + game
+   catalogue) and the wedged guards (HomeLink cameras) shared no cause. Fixing either alone would
+   have left the system looking broken.
+4. **`serve_app.py` resolves its root from `__file__`.** Launched as a bare relative `serve_app.py`
+   from the wrong working directory it silently serves the *other* HomeLink folder. Observed live:
+   port 8080 served `F:\Homelink`'s files for several minutes. Always launch with an absolute path.
+5. **Security — an exposed remote-control credential.** `redkryptonite-setup/redkryptonite_lana_token.txt`
+   was downloadable at `http://<alienware>:8080/guard-update/redkryptonite_lana_token.txt`
+   (HTTP 200, hash-confirmed identical to the local file). That token grants shell and input control
+   over RedKryptonite to anyone on the LAN or tailnet. `install_lana_arm.ps1` fetches it by design.
+   Now blocked; **the file is excluded from git**. **Rotation is recommended** — it was readable for
+   an unknown period.
+6. **Shared API key is hardcoded and already in git history** — `App.tsx`, `backend/main.py`,
+   `backend/camera_server.py`, `services/chatService.ts`, `redkryptonite-setup/update_guard.ps1`.
+   Left as-is deliberately: moving it to env loading touches the live camera auth path in five
+   places and is HL-01 work, not HL-00 ("do not redesign").
+7. **LenovoMonitor's camera roll is `X:\Camera Roll`, a mapped drive.** Mapped drives are per-user,
+   so the guard process cannot see it (`camera_roll_ready=false`). It needs the UNC path.
+8. **LenovoMonitor has no firewall rule for 7171** — only `HomeLink App 8080`. It is reachable over
+   Tailscale, which is what the app uses, so this is currently invisible.
+
+### Latency / freeze behavior (baseline, as required by the phase)
+
+- Transport: MJPEG over plain HTTP, one long-lived multipart response per tile.
+- Blind whole-grid reconnect every **120 s** (`STREAM_REFRESH_MS`); per-tile retry on `onError`.
+- Status poll 10 s, events 30 s, discovery 60 s, clock 1 s.
+- Consequence: a stalled stream can display a frozen frame for **up to 2 minutes** before the client
+  self-heals, and nothing in the client distinguishes "stream stalled" from "guard wedged."
+- No numeric end-to-end latency figure was captured — there is no instrumentation to read one from.
+  That is HL-03's job.
+
+### Gate/Blocker
+
+The HL-00 gate **passes**. Two task-list items remain unmet:
+
+1. **"record baseline latency"** — not possible without instrumentation; deferred to HL-03.
+2. **RedKryptonite stability is unproven beyond 2 minutes.** It wedged once during this session and
+   was restarted. It also runs a HomeLink *client* (PID 22408) holding streams to all three guards,
+   which is a plausible contributor. Not investigated further, per the instruction not to chase the
+   intermittent freeze during HL-00.
+
+### Do Not Redo
+
+- **Do not re-investigate which folder is live.** It is `C:\Homelink`, proven by hash against the
+  live server. `F:\Homelink` is a July-era copy; its only unique file was `homelinksession.md`, and
+  GitHub's copy is newer.
+- **Do not look for a share named `E` on LenovoMonitor.** There is none. Use `\\LENOVOMONITOR\Lana TV`
+  (`E$` is admin-only and unusable by a non-elevated process).
+- **Do not re-diagnose "guard listening but not answering."** It is the camera-roll hang. Check the
+  build for `CAMERA_ROLL_PROBE_TIMEOUT` first.
+- **Do not assume the overlay proves the video is live.** It is a separate 1 s client timer.
+- **Do not search for WebSocket or WebRTC code** in the current build — there is none. WebRTC is
+  HL-05, unstarted.
+
+### Next Action
+
+Begin **HL-01 (Security + Configuration Cleanup)**, starting with rotating the RedKryptonite agent
+token, then moving the shared API key out of source into env/config.
